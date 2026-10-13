@@ -5,6 +5,7 @@ import { IntentsBitField } from 'discord.js';
 import { NecordModule } from 'necord';
 import { AppUpdate } from './app.update.js';
 import { GiteaModule } from './gitea/gitea.module.js';
+import { HelpModule } from './help/help.module.js';
 import { ReportModule } from './report/report.module.js';
 import { UsersModule } from './users/users.module.js';
 import { ScheduleModule } from '@nestjs/schedule';
@@ -32,6 +33,7 @@ import { UserRepoEntity } from './users/user-repo.entity.js';
       }),
     }),
     GiteaModule,
+    HelpModule,
     ReportModule,
     UsersModule,
     ScheduleModule.forRoot(),
