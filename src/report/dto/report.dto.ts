@@ -29,4 +29,12 @@ export class ReportDto {
     autocomplete: true,
   })
   public readonly repo?: string;
+
+  @StringOption({
+    name: 'branch',
+    description:
+      'Branch to report on (default: tracked branch, else default branch)',
+    required: false,
+  })
+  public readonly branch?: string;
 }

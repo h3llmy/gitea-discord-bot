@@ -90,9 +90,24 @@ describe('users', () => {
     await svc.addRepo('u1', 'owner/b');
     await svc.addRepo('u1', 'owner/a');
     await svc.addRepo('u1', 'owner/a');
-    expect(await svc.listRepos('u1')).toEqual(['owner/a', 'owner/b']);
+    expect(await svc.listRepos('u1')).toEqual([
+      { fullName: 'owner/a' },
+      { fullName: 'owner/b' },
+    ]);
     await svc.removeRepo('u1', 'owner/a');
-    expect(await svc.listRepos('u1')).toEqual(['owner/b']);
+    expect(await svc.listRepos('u1')).toEqual([{ fullName: 'owner/b' }]);
+  });
+
+  it('stores the tracked branch and updates it on re-add', async () => {
+    await svc.register('u1', 'alice', 'tok');
+    await svc.addRepo('u1', 'owner/a', 'develop');
+    expect(await svc.listRepos('u1')).toEqual([
+      { fullName: 'owner/a', branch: 'develop' },
+    ]);
+    await svc.addRepo('u1', 'owner/a', 'release');
+    expect(await svc.listRepos('u1')).toEqual([
+      { fullName: 'owner/a', branch: 'release' },
+    ]);
   });
 
   it('addRepo without registration throws', async () => {
@@ -108,7 +123,7 @@ describe('users', () => {
     expect(all.find((u) => u.discordId === 'u1')).toMatchObject({
       giteaLogin: 'alice',
       giteaToken: 'tok1',
-      repos: ['owner/r1'],
+      repos: [{ fullName: 'owner/r1' }],
     });
   });
 });

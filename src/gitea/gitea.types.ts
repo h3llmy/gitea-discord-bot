@@ -1,7 +1,20 @@
+export type GiteaCommitIdentity = {
+  name?: string;
+  email?: string;
+  date?: string;
+};
+
 export type GiteaCommit = {
   sha: string;
-  author: { name: string } | null;
   created: string;
+  html_url?: string;
+  commit?: {
+    message?: string;
+    author?: GiteaCommitIdentity | null;
+    committer?: GiteaCommitIdentity | null;
+  } | null;
+  /** Gitea user resolved from the author email, null when unknown. */
+  author?: { login?: string; full_name?: string } | null;
 };
 
 export type GiteaPull = {
@@ -15,7 +28,13 @@ export type GiteaPull = {
   merged_at: string | null;
   user: { login: string } | null;
   base: { ref: string; label: string } | null;
-  head: { ref: string; label: string } | null;
+  head: {
+    ref: string;
+    label: string;
+    sha?: string;
+    /** null when the head repo was deleted. */
+    repo?: { full_name: string } | null;
+  } | null;
 };
 
 export type GiteaIssue = {
@@ -33,13 +52,22 @@ export interface RepoWindow {
   to: Date;
 }
 
+export interface CommitQuery {
+  /** Branch/tag/sha to list commits from. Defaults to the repo default branch. */
+  ref?: string;
+  /** Missing ref or no access resolves to an empty list instead of throwing. */
+  optional?: boolean;
+}
+
 export interface IGiteaService {
   listPulls(repo: string, win: RepoWindow, token: string): Promise<GiteaPull[]>;
   listCommits(
     repo: string,
     win: RepoWindow,
     token: string,
+    query?: CommitQuery,
   ): Promise<GiteaCommit[]>;
+  listOpenPulls(repo: string, token: string): Promise<GiteaPull[]>;
   listIssuesOnly(
     repo: string,
     win: RepoWindow,

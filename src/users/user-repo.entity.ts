@@ -20,6 +20,9 @@ export class UserRepoEntity {
   @Column({ type: 'text', name: 'full_name' })
   fullName!: string;
 
+  @Column({ type: 'text', name: 'branch', nullable: true })
+  branch!: string | null;
+
   @ManyToOne(() => UserEntity, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'discord_id' })
   user!: UserEntity;

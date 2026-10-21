@@ -19,9 +19,9 @@ export class ReportRepoAutocompleteInterceptor extends AutocompleteInterceptor {
     const q = String(focused.value).toLowerCase();
     await interaction.respond(
       repos
-        .filter((r) => r.toLowerCase().includes(q))
+        .filter((r) => r.fullName.toLowerCase().includes(q))
         .slice(0, 25)
-        .map((r) => ({ name: r, value: r })),
+        .map((r) => ({ name: r.fullName, value: r.fullName })),
     );
   }
 }

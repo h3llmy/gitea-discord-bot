@@ -17,7 +17,7 @@ export class HelpCommands {
         name: 'Gitea setup',
         value: [
           '- /gitea connect `login` `token` — link Gitea account (login = username, token = personal access token)',
-          '- /gitea add `repo` — track repo (`owner/repo`)',
+          '- /gitea add `repo` `[branch]` — track repo (`owner/repo`), optional branch',
           '- /gitea remove `repo` — untrack repo',
           '- /gitea list — list tracked repos',
         ].join('\n'),
@@ -25,7 +25,7 @@ export class HelpCommands {
       {
         name: 'Reports',
         value:
-          '- /report `[date]` `[from]` `[to]` `[repo]` — daily or range activity (DD-MM-YYYY, max 31 days)',
+          '- /report `[date]` `[from]` `[to]` `[repo]` `[branch]` — daily or range activity (DD-MM-YYYY, max 31 days)',
       },
       {
         name: 'Help',

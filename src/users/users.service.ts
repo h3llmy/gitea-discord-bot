@@ -5,7 +5,7 @@ import { CryptoService } from '../shared/services/crypto.service.js';
 import { UserRepoEntity } from './user-repo.entity.js';
 import { UserEntity } from './user.entity.js';
 import type { ICryptoService } from './users.types.js';
-import type { IUsersService, UserRecord } from './users.types.js';
+import type { IUsersService, TrackedRepo, UserRecord } from './users.types.js';
 
 @Injectable()
 export class UsersService implements IUsersService {
@@ -40,23 +40,36 @@ export class UsersService implements IUsersService {
     };
   }
 
-  async addRepo(discordId: string, fullName: string): Promise<void> {
+  async addRepo(
+    discordId: string,
+    fullName: string,
+    branch?: string,
+  ): Promise<void> {
     if (!(await this.getUser(discordId))) {
       throw new Error('User not registered. Run /gitea connect first.');
     }
-    await this.repos.save({ discordId, fullName }).catch(() => undefined);
+    const existing = await this.repos.findOneBy({ discordId, fullName });
+    if (existing) {
+      existing.branch = branch ?? existing.branch ?? null;
+      await this.repos.save(existing);
+      return;
+    }
+    await this.repos.save({ discordId, fullName, branch: branch ?? null });
   }
 
   async removeRepo(discordId: string, fullName: string): Promise<void> {
     await this.repos.delete({ discordId, fullName });
   }
 
-  async listRepos(discordId: string): Promise<string[]> {
+  async listRepos(discordId: string): Promise<TrackedRepo[]> {
     const rows = await this.repos.find({
       where: { discordId },
       order: { fullName: 'ASC' },
     });
-    return rows.map((r) => r.fullName);
+    return rows.map((r) => ({
+      fullName: r.fullName,
+      ...(r.branch ? { branch: r.branch } : {}),
+    }));
   }
 
   async listAllUsers(): Promise<UserRecord[]> {

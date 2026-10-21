@@ -3,12 +3,19 @@ import { ChannelType, Client, EmbedBuilder } from 'discord.js';
 import { GiteaService } from '../gitea/gitea.service.js';
 import type { IGiteaService } from '../gitea/gitea.types.js';
 import { UsersService } from '../users/users.service.js';
-import type { IUsersService } from '../users/users.types.js';
+import type { IUsersService, TrackedRepo } from '../users/users.types.js';
 import type { RepoWindow } from '../gitea/gitea.types.js';
-import type { IReportService, RepoDayActivity } from './report.types.js';
+import type {
+  ActivityCommit,
+  IReportService,
+  RepoDayActivity,
+  ReportOptions,
+} from './report.types.js';
 
 @Injectable()
 export class ReportService implements IReportService {
+  private readonly maxPrBranches = 20;
+
   public constructor(
     private readonly client: Client,
     @Inject(GiteaService) private readonly gitea: IGiteaService,
@@ -179,6 +186,14 @@ export class ReportService implements IReportService {
     return `${String(d).padStart(2, '0')}-${String(m).padStart(2, '0')}-${y}`;
   }
 
+  static commitLine(c: ActivityCommit): string {
+    const sha = c.sha.slice(0, 7);
+    const subject = (c.commit?.message ?? '').split('\n')[0].trim();
+    const author = c.commit?.author?.name || c.author?.login || '?';
+    const branch = c.ref ? ` [${c.ref}]` : '';
+    return `${sha} ${subject || '(no message)'} — ${author}${branch}`;
+  }
+
   static buildEmbed(a: RepoDayActivity): EmbedBuilder {
     const opened = a.pulls.filter((p) => p.state === 'open');
     const merged = a.pulls.filter((p) => p.merged);
@@ -186,11 +201,15 @@ export class ReportService implements IReportService {
     const iOpen = a.issues.filter((i) => i.state === 'open');
     const iClosed = a.issues.filter((i) => i.state === 'closed');
     const embed = new EmbedBuilder()
-      .setTitle(`Daily ${ReportService.formatDay(a.day)} — ${a.repo}`)
+      .setTitle(
+        `Daily ${ReportService.formatDay(a.day)} — ${a.repo}${
+          a.branch ? ` (${a.branch})` : ''
+        }`,
+      )
       .addFields(
         ...ReportService.sectionFields(
           'Commits',
-          [`${a.commits.length} commits by ${a.login}`],
+          a.commits.map((c) => ReportService.commitLine(c)),
           a.commits.length,
         ),
         ...ReportService.sectionFields(
@@ -226,36 +245,83 @@ export class ReportService implements IReportService {
     return embed;
   }
 
+  /**
+   * Commits of the primary branch plus commits still sitting on open pull
+   * request branches, deduplicated by sha.
+   */
+  private async collectCommits(
+    repo: string,
+    win: RepoWindow,
+    token: string,
+    ref?: string,
+  ): Promise<ActivityCommit[]> {
+    const bySha = new Map<string, ActivityCommit>();
+    const primary = await this.gitea.listCommits(
+      repo,
+      win,
+      token,
+      ref ? { ref, optional: true } : {},
+    );
+    for (const c of primary) bySha.set(c.sha, c);
+    if (ref) return [...bySha.values()];
+
+    const open = await this.gitea.listOpenPulls(repo, token);
+    const heads = new Map<string, { repo: string; ref: string }>();
+    for (const pr of open) {
+      const head = pr.head;
+      if (!head?.ref) continue;
+      const headRepo = head.repo?.full_name ?? repo;
+      const key = `${headRepo}#${head.ref}`;
+      if (!heads.has(key)) heads.set(key, { repo: headRepo, ref: head.ref });
+      if (heads.size >= this.maxPrBranches) break;
+    }
+    for (const [key, head] of heads) {
+      const commits = await this.gitea.listCommits(head.repo, win, token, {
+        ref: head.ref,
+        optional: true,
+      });
+      for (const c of commits) {
+        if (bySha.has(c.sha)) continue;
+        bySha.set(c.sha, { ...c, ref: key });
+      }
+    }
+    return [...bySha.values()];
+  }
+
   async collectDay(
     day: string,
-    repos: string[],
+    repos: TrackedRepo[],
     token: string,
     login: string,
+    opts: ReportOptions = {},
   ): Promise<RepoDayActivity[]> {
     const tz = process.env.REPORT_TZ ?? 'UTC';
     const win = ReportService.windowForDay(day, tz);
     const out: RepoDayActivity[] = [];
-    for (const repo of repos) {
+    for (const tracked of repos) {
+      const repo = tracked.fullName;
+      const ref = opts.branch ?? tracked.branch;
       const [commits, pulls, issues] = await Promise.all([
-        this.gitea.listCommits(repo, win, token),
+        this.collectCommits(repo, win, token, ref),
         this.gitea.listPulls(repo, win, token),
         this.gitea.listIssuesOnly(repo, win, token),
       ]);
       if (commits.length + pulls.length + issues.length === 0) continue;
-      out.push({ repo, day, login, commits, pulls, issues });
+      out.push({ repo, day, login, branch: ref, commits, pulls, issues });
     }
     return out;
   }
 
   async collectRange(
     days: string[],
-    repos: string[],
+    repos: TrackedRepo[],
     token: string,
     login: string,
+    opts: ReportOptions = {},
   ): Promise<RepoDayActivity[]> {
     const out: RepoDayActivity[] = [];
     for (const day of days) {
-      out.push(...(await this.collectDay(day, repos, token, login)));
+      out.push(...(await this.collectDay(day, repos, token, login, opts)));
     }
     return out;
   }

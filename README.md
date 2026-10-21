@@ -41,9 +41,10 @@ Note: `REPORT_CHANNEL_ID` only needed for the scheduled daily report; `/report` 
 
 Link your Gitea account. Token stored encrypted. Ephemeral reply, so only you see it.
 
-### `/gitea add <repo>`
+### `/gitea add <repo> [branch]`
 
-Track a repo, format `owner/name`.
+Track a repo, format `owner/name`. Optional `branch` pins the repo to that branch; without it
+the repo default branch is used. Re-adding an already tracked repo updates its branch.
 
 ### `/gitea remove <repo>`
 
@@ -51,9 +52,9 @@ Stop tracking a repo.
 
 ### `/gitea list`
 
-List your tracked repos.
+List your tracked repos, with the pinned branch when set.
 
-### `/report [date] [from] [to] [repo]`
+### `/report [date] [from] [to] [repo] [branch]`
 
 Report activity: commits, PRs (opened/merged/closed), issues (opened/closed).
 
@@ -61,6 +62,8 @@ Report activity: commits, PRs (opened/merged/closed), issues (opened/closed).
 - `from` + `to` — day range, same format. `to` defaults to today.
   `from` takes precedence over `date` when both present.
 - `repo` — pick one (`owner/name`) via autocomplete. Omit for all tracked repos.
+- `branch` — report one branch only. Omit to use the tracked branch (or the repo default
+  branch) plus the branches of open pull requests.
 
 Examples:
 
@@ -69,9 +72,14 @@ Examples:
 /report from:01-10-2026 to:07-10-2026
 /report from:01-10-2026
 /report from:01-10-2026 to:07-10-2026 repo:owner/name
+/report 07-10-2026 branch:develop
 ```
 
 Limits: max 31 days per range, `from` must be <= `to`. One embed per day per repo.
+
+Commits are listed with sha, subject and author. Commits are dated by committer date, so a
+branch merged later still shows up on the day it was committed. When no branch is pinned, the
+commits of open pull request branches are included too and tagged with their branch.
 
 ## Daily report
 

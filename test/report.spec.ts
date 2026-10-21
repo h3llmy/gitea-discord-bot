@@ -1,6 +1,16 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import type { Client } from 'discord.js';
 import { ReportService } from '../src/report/report.service.js';
 import type { RepoDayActivity } from '../src/report/report.types.js';
+import type {
+  CommitQuery,
+  GiteaCommit,
+  GiteaPull,
+  IGiteaService,
+  RepoWindow,
+} from '../src/gitea/gitea.types.js';
+
+process.env.REPORT_TZ = 'UTC';
 
 describe('dayKey', () => {
   it('extracts calendar day in tz', () => {
@@ -189,11 +199,18 @@ describe('buildEmbed', () => {
       login: 'alice',
       commits: [
         {
-          sha: 'a',
-          author: { name: 'alice' },
+          sha: 'abc1234',
           created: '2026-10-11T01:00:00Z',
+          commit: { message: 'fix login', author: { name: 'alice' } },
         },
-        { sha: 'b', author: { name: 'bob' }, created: '2026-10-11T02:00:00Z' },
+        {
+          sha: 'def5678',
+          created: '2026-10-11T02:00:00Z',
+          commit: {
+            message: 'add filter\n\nlong body',
+            author: { name: 'bob' },
+          },
+        },
       ],
       pulls: [
         {
@@ -247,7 +264,9 @@ describe('buildEmbed', () => {
     const commitField = (json.fields ?? []).find(
       (f) => f.name === 'Commits (2)',
     );
-    expect(commitField?.value).toBe('- 2 commits by alice');
+    expect(commitField?.value).toBe(
+      '- abc1234 fix login — alice\n- def5678 add filter — bob',
+    );
     const mergedField = (json.fields ?? []).find(
       (f) => f.name === 'PRs merged (1)',
     );
@@ -315,5 +334,152 @@ describe('buildEmbed', () => {
     const all = merged.map((f) => f.value).join('\n');
     expect(all).toContain('- #1 ');
     expect(all).toContain('- #30 ');
+  });
+});
+
+describe('commitLine', () => {
+  it('shows sha, subject and author', () => {
+    expect(
+      ReportService.commitLine({
+        sha: 'abcdef1234',
+        created: '2026-10-11T01:00:00Z',
+        commit: { message: 'fix login', author: { name: 'alice' } },
+      }),
+    ).toBe('abcdef1 fix login — alice');
+  });
+
+  it('falls back to the gitea user and to a placeholder', () => {
+    expect(
+      ReportService.commitLine({
+        sha: 'abcdef1234',
+        created: '2026-10-11T01:00:00Z',
+        commit: { message: 'fix login' },
+        author: { login: 'alice' },
+      }),
+    ).toBe('abcdef1 fix login — alice');
+    expect(
+      ReportService.commitLine({
+        sha: 'abcdef1234',
+        created: '2026-10-11T01:00:00Z',
+      }),
+    ).toBe('abcdef1 (no message) — ?');
+  });
+
+  it('tags commits found on another branch', () => {
+    expect(
+      ReportService.commitLine({
+        sha: 'abcdef1234',
+        created: '2026-10-11T01:00:00Z',
+        commit: { message: 'fix login', author: { name: 'alice' } },
+        ref: 'owner/repo#feature/x',
+      }),
+    ).toBe('abcdef1 fix login — alice [owner/repo#feature/x]');
+  });
+});
+
+describe('collectDay', () => {
+  const main: GiteaCommit = {
+    sha: 'a',
+    created: '2026-10-11T05:00:00Z',
+    commit: { message: 'on main', author: { name: 'alice' } },
+  };
+  const branchOnly: GiteaCommit = {
+    sha: 'b',
+    created: '2026-10-11T06:00:00Z',
+    commit: { message: 'on branch', author: { name: 'bob' } },
+  };
+  const openPr: GiteaPull = {
+    number: 1,
+    title: 'pr',
+    state: 'open',
+    merged: false,
+    draft: false,
+    created_at: '2026-10-10T01:00:00Z',
+    closed_at: null,
+    merged_at: null,
+    user: { login: 'alice' },
+    base: { ref: 'main', label: 'main' },
+    head: {
+      ref: 'feature/x',
+      label: 'feature/x',
+      repo: { full_name: 'owner/repo' },
+    },
+  };
+
+  function makeService(
+    listCommits: IGiteaService['listCommits'],
+    listOpenPulls: IGiteaService['listOpenPulls'] = async () => [openPr],
+  ): ReportService {
+    const gitea: IGiteaService = {
+      listCommits,
+      listOpenPulls,
+      listPulls: async () => [],
+      listIssuesOnly: async () => [],
+    };
+    return new ReportService(null as unknown as Client, gitea, null as never);
+  }
+
+  it('adds open pull request branches and deduplicates by sha', async () => {
+    const svc = makeService(async (_repo, _win, _token, query) =>
+      query?.ref === 'feature/x' ? [main, branchOnly] : [main],
+    );
+    const out = await svc.collectDay(
+      '2026-10-11',
+      [{ fullName: 'owner/repo' }],
+      'tok',
+      'alice',
+    );
+    expect(out).toHaveLength(1);
+    expect(out[0].commits.map((c) => c.sha)).toEqual(['a', 'b']);
+    expect(out[0].commits[1].ref).toBe('owner/repo#feature/x');
+    expect(out[0].commits[0].ref).toBeUndefined();
+  });
+
+  it('reports only the requested branch', async () => {
+    const listCommits = vi.fn(
+      async (
+        _repo: string,
+        _win: RepoWindow,
+        _token: string,
+        _query?: CommitQuery,
+      ) => [branchOnly],
+    );
+    const svc = makeService(listCommits, async () => [openPr]);
+    const out = await svc.collectDay(
+      '2026-10-11',
+      [{ fullName: 'owner/repo' }],
+      'tok',
+      'alice',
+      { branch: 'feature/x' },
+    );
+    expect(listCommits).toHaveBeenCalledTimes(1);
+    expect(listCommits.mock.calls[0]?.[3]).toEqual({
+      ref: 'feature/x',
+      optional: true,
+    });
+    expect(out[0].branch).toBe('feature/x');
+    expect(out[0].commits).toHaveLength(1);
+  });
+
+  it('uses the tracked branch when no override is given', async () => {
+    const listCommits = vi.fn(
+      async (
+        _repo: string,
+        _win: RepoWindow,
+        _token: string,
+        _query?: CommitQuery,
+      ) => [main],
+    );
+    const svc = makeService(listCommits, async () => []);
+    await svc.collectDay(
+      '2026-10-11',
+      [{ fullName: 'owner/repo', branch: 'develop' }],
+      'tok',
+      'alice',
+    );
+    expect(listCommits.mock.calls[0]?.[3]).toEqual({
+      ref: 'develop',
+      optional: true,
+    });
   });
 });

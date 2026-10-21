@@ -9,7 +9,8 @@ import type { SlashCommandContext } from 'necord';
 import { UsersService } from './users.service.js';
 import type { IUsersService } from './users.types.js';
 import { ConnectDto } from './dto/connect.dto.js';
-import { RepoDto } from './dto/repo.dto.js';
+import { RepoAddDto, RepoDto } from './dto/repo.dto.js';
+import { isValidBranch } from '../shared/branch.js';
 import { MessageFlags } from 'discord.js';
 
 export const GiteaCommandDecorator = createCommandGroupDecorator({
@@ -43,12 +44,18 @@ export class UsersCommands {
   })
   public async onAdd(
     @Context() [interaction]: SlashCommandContext,
-    @Options() { repo }: RepoDto,
+    @Options() { repo, branch }: RepoAddDto,
   ): Promise<void> {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    if (branch !== undefined && !isValidBranch(branch)) {
+      await interaction.editReply('Invalid branch name.');
+      return;
+    }
     try {
-      await this.users.addRepo(interaction.user.id, repo);
-      await interaction.editReply(`Tracking ${repo}`);
+      await this.users.addRepo(interaction.user.id, repo, branch);
+      await interaction.editReply(
+        `Tracking ${repo}${branch ? ` (${branch})` : ''}`,
+      );
     } catch (e) {
       await interaction.editReply((e as Error).message);
     }
@@ -80,6 +87,9 @@ export class UsersCommands {
       await interaction.editReply('No repos tracked. Use /gitea add');
       return;
     }
-    await interaction.editReply(`Tracked:\n- ${repos.join('\n- ')}`);
+    const lines = repos.map(
+      (r) => `${r.fullName}${r.branch ? ` [${r.branch}]` : ''}`,
+    );
+    await interaction.editReply(`Tracked:\n- ${lines.join('\n- ')}`);
   }
 }
