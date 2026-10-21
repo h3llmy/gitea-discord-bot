@@ -25,7 +25,7 @@ export class ReportCommands {
     @Context() [interaction]: SlashCommandContext,
     @Options() { date, from, to, repo }: ReportDto,
   ): Promise<void> {
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    await interaction.deferReply();
     const tz = process.env.REPORT_TZ ?? 'UTC';
     let days: string[];
     try {

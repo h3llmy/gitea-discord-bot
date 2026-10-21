@@ -11,6 +11,16 @@ cp .env.example .env
 bun run start:dev
 ```
 
+## Docker
+
+```bash
+cp .env.example .env   # fill it
+docker compose up -d --build
+docker compose logs -f bot
+```
+
+SQLite lives in named volume `bot-data`. Stop with `docker compose down`.
+
 ## Environment
 
 | Var | Required | Notes |
